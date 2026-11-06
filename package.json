@@ -1,6 +1,6 @@
 {
   "name": "velocity-boost",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Professional Performance Optimization Module for Node.js APIs - Compatible with Vercel, AWS Lambda, and more",
   "main": "src/index.js",
   "type": "module",
@@ -48,6 +48,6 @@
     "nodemon": "^3.0.1"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }

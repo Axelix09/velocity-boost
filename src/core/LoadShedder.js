@@ -3,45 +3,55 @@ import { monitorEventLoopDelay } from 'perf_hooks';
 class LoadShedder {
   constructor(options = {}) {
     this.maxEventLoopLag = options.maxEventLoopLag || 70;
-    this.checkInterval = options.lagCheckInterval || 500;
-    this.currentLag = 0;
-    this.isOverloaded = false;
-    this._startMonitoring();
-  }
+    this.loadThreshold = options.loadThreshold || 0.9;
+    this.lagCheckInterval = options.lagCheckInterval || 1000;
 
-  _startMonitoring() {
-    // monitorEventLoopDelay mide el delay real del event loop (bloqueos),
-    // a diferencia del diff de reloj con setInterval, que solo aproxima.
+    // Histograma de delay del event loop (en nanosegundos).
     this.histogram = monitorEventLoopDelay({ resolution: 20 });
     this.histogram.enable();
+    this.currentLag = 0;
+    this.consecutiveBreaches = 0;
+    this.status = 'HEALTHY';
+    this.stats = { checked: 0, breaches: 0, meanLagMs: 0 };
 
-    setInterval(() => {
-      const samples = this.histogram.count;
-      this.currentLag = samples > 0 ? Math.round(this.histogram.mean / 1e6) : 0;
+    this.lagInterval = setInterval(() => {
+      // Se usa el percentil 99.9 en lugar del promedio: la media amortigua
+      // los picos puntuales y no detecta sobrecargas transitorias.
+      const lagMs = this.histogram.percentile(99.9) / 1e6;
       this.histogram.reset();
-      this.isOverloaded = this.currentLag > this.maxEventLoopLag;
-    }, this.checkInterval).unref();
+      this.currentLag = lagMs;
+      this.stats.checked++;
+      this.stats.meanLagMs = Number(((this.stats.meanLagMs * (this.stats.checked - 1) + lagMs) / this.stats.checked).toFixed(2));
+
+      if (lagMs > this.maxEventLoopLag) {
+        this.consecutiveBreaches++;
+        this.stats.breaches++;
+        this.status = 'OVERLOADED';
+        this.triggeredAt = Date.now();
+      } else if (this.status === 'OVERLOADED' && lagMs < this.maxEventLoopLag / 2) {
+        this.consecutiveBreaches = 0;
+        this.status = 'HEALTHY';
+      }
+    }, this.lagCheckInterval);
+    this.lagInterval.unref();
   }
 
-  middleware() {
-    return (req, res, next) => {
-      if (this.isOverloaded && !req.path.startsWith('/velocity')) {
-        res.setHeader('Retry-After', '5');
-        return res.status(503).json({
-          status: false,
-          message: "Servidor temporalmente sobrecargado. Reintentar en breve."
-        });
-      }
-      next();
-    };
+  shouldShed() {
+    return this.status === 'OVERLOADED';
   }
 
   getStats() {
     return {
-      currentLagMs: this.currentLag,
-      status: this.isOverloaded ? 'OVERLOADED' : 'HEALTHY',
-      maxAllowedLagMs: this.maxEventLoopLag
+      currentLagMs: Number(this.currentLag.toFixed(2)),
+      maxAllowedLagMs: this.maxEventLoopLag,
+      status: this.status,
+      ...this.stats,
     };
+  }
+
+  stop() {
+    if (this.lagInterval) clearInterval(this.lagInterval);
+    this.histogram.disable();
   }
 }
 

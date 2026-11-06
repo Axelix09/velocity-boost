@@ -8,11 +8,16 @@ class CacheEngine {
     this.misses = 0;
     this.maxSize = options.cacheMaxSize || 10000;
     this.defaultTTL = options.cacheTTL || 3600;
+    // Generador de clave configurable: permite incluir identidad de usuario
+    // o cualquier otra dimension en la clave de cache.
+    this.keyGenerator = options.cacheKeyGenerator || null;
   }
 
   generateKey(req) {
-    const key = `${req.method}:${req.originalUrl}`;
-    return crypto.createHash('sha256').update(key).digest('hex').substring(0, 16);
+    const base = typeof this.keyGenerator === 'function'
+      ? this.keyGenerator(req)
+      : `${req.method}:${req.originalUrl}`;
+    return crypto.createHash('sha256').update(String(base)).digest('hex').substring(0, 16);
   }
 
   async get(key) {
@@ -40,16 +45,20 @@ class CacheEngine {
   }
 
   async set(key, value, ttl = null) {
-    const finalTTL = ttl || this.defaultTTL;
+    // Permite TTL 0 explicito; solo usa el default si no se paso un numero.
+    const finalTTL = typeof ttl === 'number' ? ttl : this.defaultTTL;
 
     if (this.redis && this.redis.status === 'ready') {
       try {
-        await this.redis.set(`vb:cache:${key}`, JSON.stringify(value), 'EX', finalTTL);
+        await this.redis.set(`vb:cache:${key}`, JSON.stringify(value), 'EX', Math.max(1, finalTTL));
         return;
       } catch (_) {}
     }
 
-    if (this.cache.size >= this.maxSize) {
+    // Si la clave ya existe, se actualiza sin expulsar otra entrada.
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
       const firstKey = this.cache.keys().next().value;
       this.cache.delete(firstKey);
     }
@@ -63,9 +72,18 @@ class CacheEngine {
   async clear() {
     if (this.redis && this.redis.status === 'ready') {
       try {
-        const keys = await this.redis.keys('vb:cache:*');
-        if (keys.length > 0) await this.redis.del(...keys);
-        return { cleared: keys.length, type: 'redis' };
+        // SCAN en vez de KEYS: KEYS es O(N) y bloquea el event loop de Redis.
+        let cleared = 0;
+        let cursor = '0';
+        do {
+          const [next, keys] = await this.redis.scan(cursor, 'MATCH', 'vb:cache:*', 'COUNT', 500);
+          cursor = next;
+          if (keys.length > 0) {
+            await this.redis.del(...keys);
+            cleared += keys.length;
+          }
+        } while (cursor !== '0');
+        return { cleared, type: 'redis' };
       } catch (_) {}
     }
     const size = this.cache.size;
@@ -76,6 +94,12 @@ class CacheEngine {
   middleware() {
     return async (req, res, next) => {
       if (req.method !== 'GET' || res.skipCache || req.path.startsWith('/velocity')) return next();
+
+      // Seguridad: nunca cachear peticiones autenticadas. Con la clave por
+      // defecto (metodo + URL) un GET con Authorization o Cookie devolveria
+      // la respuesta de otro usuario. Estas peticiones pasan sin cache.
+      const authSensitive = Boolean(req.headers['authorization'] || req.headers['cookie']);
+      if (authSensitive) return next();
 
       try {
         const key = this.generateKey(req);
@@ -89,10 +113,15 @@ class CacheEngine {
         const originalJson = res.json.bind(res);
         res.json = (body) => {
           if (res.statusCode >= 200 && res.statusCode < 300 && !res.skipCache) {
-            this.set(key, body).catch(() => {});
-            // Solo se marca MISS cuando la respuesta realmente entra
-            // al cache; las rutas con skipCache no deben llevar el header.
-            res.setHeader('X-Cache', 'MISS');
+            // Respuestas marcadas private o no-store no deben compartirse.
+            const cacheControl = String(res.getHeader('Cache-Control') || '');
+            const cacheable = !/private|no-store/i.test(cacheControl);
+            if (cacheable) {
+              this.set(key, body).catch(() => {});
+              // Solo se marca MISS cuando la respuesta realmente entra
+              // al cache; las rutas con skipCache no deben llevar el header.
+              res.setHeader('X-Cache', 'MISS');
+            }
           }
           return originalJson(body);
         };
