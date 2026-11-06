@@ -7,7 +7,7 @@ class CompressionEngine {
     this.compressedResponses = 0;
     this.bytesOriginal = 0;
     this.bytesCompressed = 0;
-    
+
     this.highComp = compression({ level: 9, threshold: 1024 });
     this.lowComp = compression({ level: 4, threshold: 2048 });
   }
@@ -19,7 +19,7 @@ class CompressionEngine {
       const originalSend = res.send;
       res.send = function (body) {
         if (body && !req._originalSize) {
-          try { req._originalSize = Buffer.byteLength(typeof body === 'string' ? body : JSON.stringify(body)); } 
+          try { req._originalSize = Buffer.byteLength(typeof body === 'string' ? body : JSON.stringify(body)); }
           catch (e) { req._originalSize = 0; }
         }
         originalSend.call(this, body);
@@ -41,7 +41,7 @@ class CompressionEngine {
       if (this.loadShedder && this.loadShedder.currentLag > (this.loadShedder.maxEventLoopLag / 2)) {
         return this.lowComp(req, res, next);
       }
-      
+
       this.highComp(req, res, next);
     };
   }
@@ -55,7 +55,7 @@ class CompressionEngine {
       bytesCompressed: this.bytesCompressed,
       bytesSaved: saved,
       compressionRatio: `${percentage}%`,
-      currentMode: (this.loadShedder && this.loadShedder.currentLag > 35) ? 'LOW_CPU_MODE' : 'MAX_COMPRESSION'
+      currentMode: (this.loadShedder && this.loadShedder.currentLag > (this.loadShedder.maxEventLoopLag / 2)) ? 'LOW_CPU_MODE' : 'MAX_COMPRESSION'
     };
   }
 }
