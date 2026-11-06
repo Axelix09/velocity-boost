@@ -32,7 +32,7 @@ jobs:
       - name: Reportar fallos como anotaciones
         if: steps.tests.outcome == 'failure'
         run: |
-          tail -n 80 /tmp/test.log | while IFS= read -r line; do
+          grep -E '✖|not ok|error:|AssertionError|Expected|actual|expected|operator|at ' /tmp/test.log | head -30 | while IFS= read -r line; do
             echo "::error::$line"
           done
           exit 1
