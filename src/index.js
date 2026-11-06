@@ -19,6 +19,10 @@ class VelocityBoost extends PerformanceManager {
   }
 
   initializeRoutes(app) {
+    // Seguridad: las rutas /velocity/* quedan deshabilitadas por defecto.
+    // Sin esto, cualquiera podria ver metricas, limpiar el cache o forzar GC.
+    if (!this.options.enableAdminRoutes) return app;
+
     const auth = this.options.adminMiddleware || ((req, res, next) => next());
 
     app.use('/velocity', auth);
@@ -29,7 +33,9 @@ class VelocityBoost extends PerformanceManager {
         res.setHeader('Content-Type', 'text/html');
         res.send(html);
       } catch (e) {
-        res.status(500).json({ error: 'Dashboard no disponible', detail: e.message });
+        // No filtrar detalles del error al cliente.
+        console.error('VelocityBoost: error sirviendo dashboard:', e.message);
+        res.status(500).json({ error: 'Dashboard no disponible' });
       }
     });
 
