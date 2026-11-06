@@ -8,15 +8,18 @@ import LoadShedder from './LoadShedder.js';
 
 class PerformanceManager {
   constructor(options = {}) {
+    // Las normalizaciones van DESPUÉS del spread para que los defaults
+    // no puedan ser pisados por valores `undefined` del objeto crudo.
     this.options = {
+      ...options,
       enableCompression: options.enableCompression !== false,
       enableCaching: options.enableCaching !== false,
       enableRateLimit: options.enableRateLimit !== false,
       enableMonitoring: options.enableMonitoring !== false,
       enableLoadShedding: options.enableLoadShedding !== false,
       enableSecurityHeaders: options.enableSecurityHeaders || false,
+      enableNoStore: options.enableNoStore || false,
       adminMiddleware: options.adminMiddleware || null,
-      ...options,
     };
 
     this.memory = new RequestTracker(this.options);
@@ -27,7 +30,7 @@ class PerformanceManager {
     this.monitoring = new MonitoringSystem(this.options);
     this.optimization = new OptimizationMiddleware(this.options);
 
-    if (process.env.REDIS_URL) this._initRedis(process.env.REDIS_URL);
+    if (process.env.REDIS_URL) this.redisInit = this._initRedis(process.env.REDIS_URL);
   }
 
   async _initRedis(url) {
@@ -40,12 +43,14 @@ class PerformanceManager {
   }
 
   initializeMiddleware(app) {
+    // Los headers se aplican ANTES del cache para que las respuestas
+    // servidas desde cache (HIT) también los reciban.
     if (this.options.enableLoadShedding) app.use(this.loadShedder.middleware());
     if (this.options.enableMonitoring) app.use(this.monitoring.middleware());
     if (this.options.enableCompression) app.use(this.compression.middleware());
     if (this.options.enableRateLimit) app.use(this.rateLimit.middleware());
-    if (this.options.enableCaching) app.use(this.cache.middleware());
     app.use(this.optimization.middleware());
+    if (this.options.enableCaching) app.use(this.cache.middleware());
     return app;
   }
 

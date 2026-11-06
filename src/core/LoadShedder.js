@@ -1,6 +1,8 @@
+import { monitorEventLoopDelay } from 'perf_hooks';
+
 class LoadShedder {
   constructor(options = {}) {
-    this.maxEventLoopLag = options.maxEventLoopLag || 70; 
+    this.maxEventLoopLag = options.maxEventLoopLag || 70;
     this.checkInterval = options.lagCheckInterval || 500;
     this.currentLag = 0;
     this.isOverloaded = false;
@@ -8,12 +10,16 @@ class LoadShedder {
   }
 
   _startMonitoring() {
-    let lastCheck = Date.now();
+    // monitorEventLoopDelay mide el delay real del event loop (bloqueos),
+    // a diferencia del diff de reloj con setInterval, que solo aproxima.
+    this.histogram = monitorEventLoopDelay({ resolution: 20 });
+    this.histogram.enable();
+
     setInterval(() => {
-      const now = Date.now();
-      this.currentLag = Math.max(0, now - lastCheck - this.checkInterval);
+      const samples = this.histogram.count;
+      this.currentLag = samples > 0 ? Math.round(this.histogram.mean / 1e6) : 0;
+      this.histogram.reset();
       this.isOverloaded = this.currentLag > this.maxEventLoopLag;
-      lastCheck = now;
     }, this.checkInterval).unref();
   }
 

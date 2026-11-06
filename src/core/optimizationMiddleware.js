@@ -1,6 +1,7 @@
 class OptimizationMiddleware {
   constructor(options = {}) {
     this.enableSecurityHeaders = options.enableSecurityHeaders || false;
+    this.enableNoStore = options.enableNoStore || false;
   }
 
   middleware() {
@@ -13,7 +14,11 @@ class OptimizationMiddleware {
         res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
       }
 
-      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      // Opt-in: enviar Cache-Control: no-store a todo contradice el
+      // propósito del paquete, así que solo se envia si se pide.
+      if (this.enableNoStore) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
 
       next();
     };

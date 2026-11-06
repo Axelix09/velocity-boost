@@ -31,9 +31,9 @@ class MonitoringSystem {
 
   recordMetric(metric) {
     this.metrics.push(metric);
-    if (this.metrics.length > this.maxMetrics) {
-      this.metrics = this.metrics.slice(-this.maxMetrics);
-    }
+    // shift() es O(1) amortizado; el slice anterior copiaba el array
+    // completo (hasta 10k entradas) en cada request.
+    if (this.metrics.length > this.maxMetrics) this.metrics.shift();
   }
 
   getStats() {

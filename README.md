@@ -74,6 +74,9 @@ const booster = new VelocityBoost({
   // Security headers
   enableSecurityHeaders: false,
 
+  // Response headers
+  enableNoStore: false,
+
   // Admin route protection
   adminMiddleware: null,
 });
@@ -98,6 +101,7 @@ const booster = new VelocityBoost({
 | `enableMonitoring` | boolean | `true` | Request metrics collection |
 | `monitoringMaxMetrics` | number | `10000` | Max metrics kept in memory |
 | `enableSecurityHeaders` | boolean | `false` | Add security headers to all responses |
+| `enableNoStore` | boolean | `false` | Send `Cache-Control: no-cache, no-store, must-revalidate` on all responses |
 | `adminMiddleware` | function | `null` | Middleware to protect `/velocity/*` routes |
 
 ---
@@ -118,7 +122,7 @@ The fallback is transparent — your app keeps running regardless.
 
 ### Automatic Caching
 
-All GET requests are cached automatically. The middleware intercepts the response, caches it, and serves it from cache on subsequent identical requests. Responses include an `X-Cache: HIT` or `X-Cache: MISS` header.
+JSON responses to GET requests (routes that reply with `res.json()`) are cached automatically. The middleware intercepts the response, caches it, and serves it from cache on subsequent identical requests. The cache key is the method plus the URL, so routes whose response varies per user should use `skipCache()`. Responses include an `X-Cache: HIT` or `X-Cache: MISS` header.
 
 The `/velocity/*` admin routes are never cached.
 
@@ -152,7 +156,7 @@ app.get('/api/public', booster.rateLimit.generous(), (req, res) => {
 
 ### Load Shedding
 
-Monitors the Node.js event loop lag every 500ms. If lag exceeds `maxEventLoopLag`, new requests receive a `503` with a `Retry-After: 5` header until the server recovers. Admin routes are never shed.
+Monitors the event loop lag via `perf_hooks.monitorEventLoopDelay`, checked every `lagCheckInterval` ms (default 500). If lag exceeds `maxEventLoopLag`, new requests receive a `503` with a `Retry-After: 5` header until the server recovers. Admin routes are never shed.
 
 ### Security Headers
 
@@ -303,6 +307,16 @@ This ensures headers are always set regardless of cache HIT or MISS, and monitor
 
 ---
 
+## Tests
+
+```bash
+npm test
+```
+
+Runs the test suite with Node's built-in test runner (no extra dependencies).
+
+---
+
 ## License
 
-MIT — [AxelDev09](https://github.com/Soyaxel09)
+MIT — [AxelDev09](https://github.com/Axelix09)

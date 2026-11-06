@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Tests
+        id: tests
+        continue-on-error: true
+        run: |
+          npm test > /tmp/test.log 2>&1
+
+      - name: Reportar fallos como anotaciones
+        if: steps.tests.outcome == 'failure'
+        run: |
+          tail -n 80 /tmp/test.log | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit 1

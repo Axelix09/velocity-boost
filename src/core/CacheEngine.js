@@ -90,8 +90,10 @@ class CacheEngine {
         res.json = (body) => {
           if (res.statusCode >= 200 && res.statusCode < 300 && !res.skipCache) {
             this.set(key, body).catch(() => {});
+            // Solo se marca MISS cuando la respuesta realmente entra
+            // al cache; las rutas con skipCache no deben llevar el header.
+            res.setHeader('X-Cache', 'MISS');
           }
-          res.setHeader('X-Cache', 'MISS');
           return originalJson(body);
         };
       } catch (_) {}
