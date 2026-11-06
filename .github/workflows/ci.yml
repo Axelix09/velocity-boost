@@ -24,4 +24,15 @@ jobs:
         run: npm install
 
       - name: Tests
-        run: npm test
+        id: tests
+        continue-on-error: true
+        run: |
+          npm test > /tmp/test.log 2>&1
+
+      - name: Reportar fallos como anotaciones
+        if: steps.tests.outcome == 'failure'
+        run: |
+          tail -n 80 /tmp/test.log | while IFS= read -r line; do
+            echo "::error::$line"
+          done
+          exit 1
