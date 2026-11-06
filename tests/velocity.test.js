@@ -116,7 +116,7 @@ test('CacheEngine: TTL, expiracion y eviction LRU', async () => {
   assert.equal(await engine.get('b'), null);
   assert.equal(await engine.get('c'), 2);
   const cleared = await engine.clear();
-  assert.equal(cleared.type, 'MEMORY');
+  assert.equal(cleared.type, 'memory');
   assert.equal(cleared.cleared, 2);
 });
 
