@@ -1,8 +1,19 @@
-# velocity-boost ⚡
+# ⚡ VelocityBoost - Performance Optimization Module
 
-Professional performance optimization module for Node.js APIs. Drop-in middleware that adds caching, compression, rate limiting, load shedding, and real-time monitoring to any Express app — compatible with Vercel, AWS Lambda, and traditional servers.
+[![Node.js CI](https://github.com/Axelix09/velocity-boost/actions/workflows/ci.yml/badge.svg)](https://github.com/Axelix09/velocity-boost/actions/workflows/ci.yml)
 
----
+Professional performance optimization module for Node.js APIs. Production-grade caching, compression, rate limiting, load shedding, and monitoring.
+
+## Why VelocityBoost?
+
+Unlike typical performance middleware, VelocityBoost provides **manual load-shedding controls** for handling traffic spikes, making it ideal for AI APIs, high-traffic backends, and resource-constrained environments.
+
+- **Automatic Response Caching** - Cache GET responses with configurable TTL
+- **Smart Compression** - Adaptive compression based on server load
+- **Rate Limiting** - Protect endpoints from abuse with configurable limits
+- **Load Shedding** - Monitor event loop lag and shed traffic during overload
+- **Memory Management** - Track requests and force garbage collection
+- **Real-time Monitoring** - Live metrics dashboard and health checks
 
 ## Installation
 
@@ -10,69 +21,32 @@ Professional performance optimization module for Node.js APIs. Drop-in middlewar
 npm install velocity-boost
 ```
 
-If you want Redis support:
-
-```bash
-npm install velocity-boost ioredis
-```
-
----
-
 ## Quick Start
 
-```js
-import express from 'express';
+```javascript
 import VelocityBoost from 'velocity-boost';
+import express from 'express';
 
 const app = express();
-const booster = new VelocityBoost();
 
-booster.initializeMiddleware(app);
-app.use(express.json());
-
-app.get('/api/data', (req, res) => {
-  res.json({ message: 'Hello World' });
-});
-
-app.listen(3000);
-```
-
-That's it. Compression, caching, rate limiting, and monitoring are active by default.
-
----
-
-## Configuration
-
-All options are passed to the constructor. Every feature is enabled by default and can be toggled individually.
-
-```js
 const booster = new VelocityBoost({
-  // Cache
-  enableCaching: true,
-  cacheTTL: 3600,
+  // Caching
+  cacheTTL: 300,
   cacheMaxSize: 10000,
 
-  // Compression
-  enableCompression: true,
-
-  // Rate limiting
-  enableRateLimit: true,
-  rateLimitMax: 1000,
-  rateLimitWindow: 15 * 60 * 1000,
-  strictLimitMax: 100,
-  generousLimitMax: 5000,
-
-  // Load shedding
-  enableLoadShedding: true,
+  // Load Shedding
   maxEventLoopLag: 70,
   lagCheckInterval: 500,
 
+  // Rate Limiting
+  rateLimitMax: 100,
+  rateLimitWindow: 60 * 1000,
+
   // Monitoring
-  enableMonitoring: true,
   monitoringMaxMetrics: 10000,
 
   // Security headers
-  enableSecurityHeaders: false,
+  enableSecurityHeaders: true,
 
   // Response headers
   enableNoStore: false,
@@ -80,41 +54,28 @@ const booster = new VelocityBoost({
   // Admin route protection
   adminMiddleware: null,
 });
+
+booster.initializeMiddleware(app);
 ```
 
-### Options Reference
+## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enableCaching` | boolean | `true` | Automatic GET response caching |
-| `cacheTTL` | number | `3600` | Cache TTL in seconds |
-| `cacheMaxSize` | number | `10000` | Max in-memory cache entries |
-| `enableCompression` | boolean | `true` | Gzip/Brotli response compression |
-| `enableRateLimit` | boolean | `true` | Global rate limiting |
-| `rateLimitMax` | number | `1000` | Max requests per window (global) |
-| `rateLimitWindow` | number | `900000` | Rate limit window in ms (15 min) |
-| `strictLimitMax` | number | `100` | Max requests for strict limiter |
-| `generousLimitMax` | number | `5000` | Max requests for generous limiter |
-| `enableLoadShedding` | boolean | `true` | Reject requests when event loop is lagging |
-| `maxEventLoopLag` | number | `70` | Max allowed event loop lag in ms |
-| `lagCheckInterval` | number | `500` | Lag check interval in ms |
+| `enableCaching` | boolean | `true` | Enable response caching |
+| `cacheTTL` | number | `3600` | Cache time-to-live in seconds |
+| `cacheMaxSize` | number | `10000` | Max entries in memory cache |
+| `cacheKeyGenerator` | function | `null` | Custom cache key generator `(req) => string`. Default: `method:URL` |
+| `enableCompression` | boolean | `true` | Enable adaptive compression |
+| `enableRateLimit` | boolean | `true` | Enable rate limiting |
+| `rateLimitMax` | number | `1000` | Max requests per window |
+| `rateLimitWindow` | number | `60000` | Rate limit window in ms |
 | `enableMonitoring` | boolean | `true` | Request metrics collection |
 | `monitoringMaxMetrics` | number | `10000` | Max metrics kept in memory |
 | `enableSecurityHeaders` | boolean | `false` | Add security headers to all responses |
 | `enableNoStore` | boolean | `false` | Send `Cache-Control: no-cache, no-store, must-revalidate` on all responses |
+| `enableAdminRoutes` | boolean | `false` | Expose `/velocity/*` admin routes. Enabled automatically when `adminMiddleware` is set |
 | `adminMiddleware` | function | `null` | Middleware to protect `/velocity/*` routes |
-
----
-
-## Redis Support
-
-Set the `REDIS_URL` environment variable and velocity-boost will automatically use Redis for caching. If Redis is unavailable or `ioredis` is not installed, it falls back to in-memory cache with no configuration needed.
-
-```env
-REDIS_URL=redis://localhost:6379
-```
-
-The fallback is transparent — your app keeps running regardless.
 
 ---
 
@@ -122,61 +83,63 @@ The fallback is transparent — your app keeps running regardless.
 
 ### Automatic Caching
 
-JSON responses to GET requests (routes that reply with `res.json()`) are cached automatically. The middleware intercepts the response, caches it, and serves it from cache on subsequent identical requests. The cache key is the method plus the URL, so routes whose response varies per user should use `skipCache()`. Responses include an `X-Cache: HIT` or `X-Cache: MISS` header.
+JSON responses to GET requests (routes that reply with `res.json()`) are cached automatically. The middleware intercepts the response, caches it, and serves it from cache on subsequent identical requests. The cache key is the method plus the URL. Responses include an `X-Cache: HIT` or `X-Cache: MISS` header. Routes using `skipCache()` receive no `X-Cache` header at all, since they are never cached.
+
+**Security:** GET requests carrying an `Authorization` or `Cookie` header are never cached or served from cache, so authenticated endpoints cannot leak one user's response to another. Responses marked `Cache-Control: private` or `no-store` are excluded too. If your API returns per-user content in another way, protect that route with `skipCache()` or supply a `cacheKeyGenerator(req)` that includes the user identity.
+
+```javascript
+// Never cache this route (per-user data)
+app.get('/api/user/profile', booster.cache.skipCache(), handler);
+```
 
 The `/velocity/*` admin routes are never cached.
 
-To disable caching on a specific route:
+#### Cache Storage
 
-```js
-app.post('/api/upload', booster.cache.skipCache(), (req, res) => {
-  res.json({ uploaded: true });
-});
-```
+Memory by default. If `REDIS_URL` is set (e.g. on Vercel or any platform with a Redis addon), the cache automatically switches to Redis. The fallback is transparent — your app keeps running regardless.
 
-### Adaptive Compression
+### Smart Compression
 
-Responses are compressed with gzip/Brotli (level 9 by default). When the server is under load (event loop lag above 50% of the threshold), compression automatically drops to level 4 to save CPU.
-
-Streaming routes (`/stream`) are excluded from compression.
+Adaptive compression that adjusts the compression level based on current event loop lag:
+- **Normal load:** High compression level (level 9, best size reduction)
+- **High load:** Lower compression level (level 4, faster, less CPU)
 
 ### Rate Limiting
 
-Three rate limit tiers are available. The global limiter is applied automatically. Strict and generous limiters can be applied per route:
+Per-IP rate limiting using `express-rate-limit`:
 
-```js
-app.get('/api/auth', booster.rateLimit.strict(), (req, res) => {
-  res.json({ token: '...' });
+```javascript
+// Global (applied automatically via initializeMiddleware)
+// Defaults: 1000 requests per 60s
+
+// Custom per-route
+app.get('/api/public', booster.rateLimit.generous(), (req, res) => {
+  res.json({ data: 'public' });
 });
 
-app.get('/api/public', booster.rateLimit.generous(), (req, res) => {
-  res.json({ data: '...' });
+app.post('/api/ai', booster.rateLimit.strict(), (req, res) => {
+  res.json({ result: '...' });
 });
 ```
 
 ### Load Shedding
 
-Monitors the event loop lag via `perf_hooks.monitorEventLoopDelay`, checked every `lagCheckInterval` ms (default 500). If lag exceeds `maxEventLoopLag`, new requests receive a `503` with a `Retry-After: 5` header until the server recovers. Admin routes are never shed.
+Monitors the event loop lag via `perf_hooks.monitorEventLoopDelay`, checked every `lagCheckInterval` ms (default 500), using the p99.9 of the delay histogram so transient spikes are detected. If lag exceeds `maxEventLoopLag`, new requests receive a `503` with a `Retry-After: 5` header until the server recovers. Admin routes are never shed.
 
 ### Security Headers
 
-Opt-in via `enableSecurityHeaders: true`. Adds:
+Optional (`enableSecurityHeaders: true`): adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Referrer-Policy`, and `Permissions-Policy` to every response.
 
-- `X-Content-Type-Options: nosniff`
-- `X-Frame-Options: DENY`
-- `X-XSS-Protection: 1; mode=block`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: geolocation=(), microphone=(), camera=()`
+### Admin Dashboard & Monitoring
 
-### Admin Route Protection
+Admin routes (`/velocity/health`, `/velocity/stats`, `/velocity/metrics`, `/velocity/dashboard`, `/velocity/cache/clear`, `/velocity/gc`) are **disabled by default**. They are enabled either with `enableAdminRoutes: true` (local development) or by setting an `adminMiddleware`, which is then applied to all of them:
 
-Protect all `/velocity/*` routes with any Express middleware:
-
-```js
+```javascript
 const booster = new VelocityBoost({
+  enableAdminRoutes: process.env.NODE_ENV !== 'production',
   adminMiddleware: (req, res, next) => {
-    if (req.headers['x-admin-key'] !== process.env.ADMIN_KEY) {
-      return res.status(401).json({ error: 'Unauthorized' });
+    if (req.headers['x-admin-token'] !== process.env.ADMIN_TOKEN) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
     next();
   },
@@ -185,125 +148,61 @@ const booster = new VelocityBoost({
 
 ---
 
-## Admin Endpoints
+## Usage Examples
 
-All admin endpoints are mounted under `/velocity` and protected by `adminMiddleware` if configured.
+### Basic Express Setup
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/velocity/dashboard` | Visual monitoring dashboard |
-| `GET` | `/velocity/health` | Server health status |
-| `GET` | `/velocity/stats` | Full stats for all modules |
-| `GET` | `/velocity/metrics?limit=50` | Recent request metrics |
-| `POST` | `/velocity/cache/clear` | Clear all cached entries |
-| `POST` | `/velocity/gc` | Force garbage collection (requires `--expose-gc`) |
-
-### Health Response Example
-
-```json
-{
-  "status": "healthy",
-  "uptime": "2h 15m",
-  "memory": {
-    "heapUsed": "45 MB",
-    "heapTotal": "64 MB",
-    "heapPercentage": "70.31%"
-  },
-  "stats": { ... }
-}
-```
-
-Status can be `healthy`, `warning` (heap > 80%), or `critical` (load shedding active).
-
-### Stats Response Example
-
-```json
-{
-  "memory": {
-    "heapUsedMB": 45,
-    "heapTotalMB": 64,
-    "requests": 1200,
-    "errors": 3,
-    "avgResponseTime": 12,
-    "slowRequests": 1
-  },
-  "cache": {
-    "entries": 42,
-    "hits": 980,
-    "misses": 220,
-    "hitRate": "81.67",
-    "storageType": "REDIS"
-  },
-  "rateLimit": {
-    "totalRequests": 1200,
-    "blockedRequests": 5,
-    "blockPercentage": "0.42"
-  },
-  "loadShedding": {
-    "currentLagMs": 3,
-    "status": "HEALTHY",
-    "maxAllowedLagMs": 70
-  },
-  "compression": {
-    "compressedResponses": 950,
-    "bytesSaved": 2048000,
-    "compressionRatio": "68.00%",
-    "currentMode": "MAX_COMPRESSION"
-  },
-  "timestamp": "2026-05-24T15:30:00.000Z"
-}
-```
-
----
-
-## Vercel / Serverless
-
-velocity-boost works out of the box on Vercel. Redis is recommended for caching since in-memory cache does not persist between function invocations.
-
-```js
-import express from 'express';
+```javascript
 import VelocityBoost from 'velocity-boost';
+import express from 'express';
 
 const app = express();
-const booster = new VelocityBoost({
-  cacheTTL: 300,
-  rateLimitMax: 1000,
-});
+const booster = new VelocityBoost({ cacheTTL: 300 });
 
 booster.initializeMiddleware(app);
-app.use(express.json());
 
 app.get('/api/data', (req, res) => {
-  res.json({ message: 'Hello from Vercel' });
+  res.json({ items: [...], cached: 'for 5 minutes' });
 });
+
+app.listen(3000);
+```
+
+### Vercel Deployment
+
+```javascript
+// api/index.js
+import VelocityBoost from 'velocity-boost';
+import express from 'express';
+
+const app = express();
+app.set('trust proxy', 1); // detras del proxy de Vercel, antes de initializeMiddleware
+
+const booster = new VelocityBoost({ cacheTTL: 300 });
+booster.initializeMiddleware(app);
 
 export default app;
 ```
 
----
+#### Serverless caveats
 
-## Garbage Collection
-
-Force GC via `POST /velocity/gc`. Requires launching Node with the `--expose-gc` flag:
-
-```bash
-node --expose-gc server.js
-```
+- The in-memory cache, rate limiter counters and load shedder are **per instance**: they reset on every cold start and are not shared between lambdas. Set `REDIS_URL` to share cache state across instances (the rate limiter still counts per instance).
+- Behind Vercel's (or any platform's) proxy, set `app.set('trust proxy', 1)` **before** `initializeMiddleware(app)`. Otherwise every request appears to come from the proxy IP and the rate limiter groups all your users into a single bucket.
 
 ---
 
 ## Middleware Order
 
-velocity-boost registers middleware in this order internally:
+VelocityBoost registers its middlewares in this order:
 
-1. Load Shedder
-2. Monitoring
-3. Compression
-4. Rate Limiter
-5. Optimization headers
-6. Cache
+1. **Load Shedding** - shed requests before doing any work
+2. **Monitoring** - record request metrics
+3. **Compression** - adaptive compression
+4. **Rate Limiting** - per-IP limits
+5. **Optimization (headers)** - security/response headers
+6. **Caching** - intercept and serve cached responses
 
-This ensures headers are always set regardless of cache HIT or MISS, and monitoring captures every request including rejected ones.
+This ensures headers are always set regardless of cache HIT or MISS, and monitoring covers shedded requests too.
 
 ---
 
