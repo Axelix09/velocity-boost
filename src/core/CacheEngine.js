@@ -32,7 +32,9 @@ class CacheEngine {
     }
 
     const item = this.cache.get(key);
-    if (!item || (item.expires && item.expires < Date.now())) {
+    // <= (y no <) para que un TTL 0 expire de inmediato incluso
+    // si la lectura ocurre en el mismo milisegundo.
+    if (!item || (item.expires && item.expires <= Date.now())) {
       if (item) this.cache.delete(key);
       this.misses++;
       return null;
