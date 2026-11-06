@@ -18,7 +18,7 @@
     "dev": "node --expose-gc src/examples/basic.js",
     "advanced": "node src/examples/advanced.js",
     "vercel": "node src/examples/vercel.js",
-    "test": "node --test tests/"
+    "test": "node --test tests/velocity.test.js"
   },
   "keywords": [
     "performance",
