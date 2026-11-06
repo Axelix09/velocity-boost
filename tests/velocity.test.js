@@ -12,6 +12,7 @@ const startApp = async (options) => {
   const booster = new VelocityBoost(options);
   booster.initializeMiddleware(app);
   app.get('/api/data', (req, res) => res.json({ message: 'hello' }));
+  app.get('/api/me', (req, res) => res.json({ user: req.headers.authorization || 'anon' }));
   app.get('/api/random', booster.cache.skipCache(), (req, res) => res.json({ n: Math.random() }));
   const server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
@@ -27,6 +28,7 @@ test('defaults: todas las features activadas y no pisadas por undefined', () => 
   assert.equal(booster.options.enableMonitoring, true);
   assert.equal(booster.options.enableLoadShedding, true);
   assert.equal(booster.options.enableNoStore, false);
+  assert.equal(booster.options.enableAdminRoutes, false);
   assert.equal(booster.options.cacheTTL, 60);
   assert.equal(booster.options.adminMiddleware, null);
 });
@@ -40,6 +42,25 @@ test('cache: MISS la primera vez, HIT la segunda', async (t) => {
   assert.equal(second.headers.get('x-cache'), 'HIT');
   const body = await second.json();
   assert.equal(body.message, 'hello');
+});
+
+test('seguridad: GET con Authorization no se cachea entre usuarios', async (t) => {
+  const { server, base } = await startApp();
+  t.after(() => server.close());
+  const a = await fetch(base + '/api/me', { headers: { Authorization: 'Bearer user-a' } });
+  const b = await fetch(base + '/api/me', { headers: { Authorization: 'Bearer user-b' } });
+  // Ninguna respuesta cacheada: cada usuario ve la suya.
+  assert.equal(a.headers.get('x-cache'), null);
+  assert.equal(b.headers.get('x-cache'), null);
+  assert.equal((await a.json()).user, 'Bearer user-a');
+  assert.equal((await b.json()).user, 'Bearer user-b');
+});
+
+test('seguridad: GET con Cookie tampoco se cachea', async (t) => {
+  const { server, base } = await startApp();
+  t.after(() => server.close());
+  const r = await fetch(base + '/api/data', { headers: { Cookie: 'session=abc' } });
+  assert.equal(r.headers.get('x-cache'), null);
 });
 
 test('skipCache: la ruta nunca queda cacheada', async (t) => {
@@ -82,8 +103,19 @@ test('sin enableNoStore no se envia Cache-Control global', async (t) => {
   assert.equal(second.headers.get('x-content-type-options'), 'nosniff');
 });
 
-test('endpoints de admin responden', async (t) => {
+test('admin deshabilitado por defecto: /velocity responde 404', async (t) => {
   const { server, base } = await startApp();
+  t.after(() => server.close());
+  const health = await fetch(base + '/velocity/health');
+  assert.equal(health.status, 404);
+  const dash = await fetch(base + '/velocity/dashboard');
+  assert.equal(dash.status, 404);
+  const clear = await fetch(base + '/velocity/cache/clear', { method: 'POST' });
+  assert.equal(clear.status, 404);
+});
+
+test('admin habilitado con enableAdminRoutes: endpoints responden', async (t) => {
+  const { server, base } = await startApp({ enableAdminRoutes: true });
   t.after(() => server.close());
   const health = await fetch(base + '/velocity/health');
   assert.equal(health.status, 200);
@@ -95,8 +127,19 @@ test('endpoints de admin responden', async (t) => {
   assert.equal(clear.status, 200);
 });
 
-test('dashboard sirve HTML', async (t) => {
-  const { server, base } = await startApp();
+test('adminMiddleware activa las rutas automaticamente', async (t) => {
+  const app = express();
+  const booster = new VelocityBoost({ adminMiddleware: (req, res, next) => next() });
+  booster.initializeMiddleware(app);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((r) => server.once('listening', r));
+  t.after(() => server.close());
+  const r = await fetch(`http://127.0.0.1:${server.address().port}/velocity/health`);
+  assert.equal(r.status, 200);
+});
+
+test('dashboard sirve HTML cuando admin esta habilitado', async (t) => {
+  const { server, base } = await startApp({ enableAdminRoutes: true });
   t.after(() => server.close());
   const dash = await fetch(base + '/velocity/dashboard');
   assert.equal(dash.status, 200);
@@ -118,6 +161,17 @@ test('CacheEngine: TTL, expiracion y eviction LRU', async () => {
   const cleared = await engine.clear();
   assert.equal(cleared.type, 'memory');
   assert.equal(cleared.cleared, 2);
+});
+
+test('CacheEngine: TTL 0 explicito y set sobre clave existente no expulsa', async () => {
+  const engine = new CacheEngine({ cacheTTL: 60, cacheMaxSize: 2 });
+  await engine.set('a', 1);
+  await engine.set('a', 2, 0); // TTL 0 explicito: expira inmediatamente
+  assert.equal(await engine.get('a'), null);
+  await engine.set('x', 1);
+  await engine.set('x', 2); // clave existente: no expulsa a otras
+  assert.equal(engine.cache.size, 1);
+  assert.equal(await engine.get('x'), 2);
 });
 
 test('MonitoringSystem: descarta la metrica mas vieja sin copiar arrays', () => {
@@ -144,4 +198,5 @@ test('LoadShedder: getStats reporta el umbral configurado', () => {
   assert.equal(stats.maxAllowedLagMs, 40);
   assert.equal(typeof stats.currentLagMs, 'number');
   assert.ok(['HEALTHY', 'OVERLOADED'].includes(stats.status));
+  shedder.stop();
 });

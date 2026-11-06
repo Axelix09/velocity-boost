@@ -15,12 +15,15 @@ class LoadShedder {
     this.histogram = monitorEventLoopDelay({ resolution: 20 });
     this.histogram.enable();
 
-    setInterval(() => {
+    this._timer = setInterval(() => {
+      // Se usa el percentil 99.9 en lugar del promedio: la media amortigua
+      // los picos puntuales y no detecta sobrecargas transitorias.
       const samples = this.histogram.count;
-      this.currentLag = samples > 0 ? Math.round(this.histogram.mean / 1e6) : 0;
+      this.currentLag = samples > 0 ? Math.round(this.histogram.percentile(99.9) / 1e6) : 0;
       this.histogram.reset();
       this.isOverloaded = this.currentLag > this.maxEventLoopLag;
-    }, this.checkInterval).unref();
+    }, this.checkInterval);
+    this._timer.unref();
   }
 
   middleware() {
@@ -42,6 +45,11 @@ class LoadShedder {
       status: this.isOverloaded ? 'OVERLOADED' : 'HEALTHY',
       maxAllowedLagMs: this.maxEventLoopLag
     };
+  }
+
+  stop() {
+    if (this._timer) clearInterval(this._timer);
+    this.histogram.disable();
   }
 }
 

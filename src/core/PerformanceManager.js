@@ -19,6 +19,10 @@ class PerformanceManager {
       enableLoadShedding: options.enableLoadShedding !== false,
       enableSecurityHeaders: options.enableSecurityHeaders || false,
       enableNoStore: options.enableNoStore || false,
+      // Seguridad: las rutas /velocity/* quedan deshabilitadas salvo que se
+      // configure enableAdminRoutes o se pase adminMiddleware.
+      enableAdminRoutes: Boolean(options.enableAdminRoutes || options.adminMiddleware),
+      cacheKeyGenerator: options.cacheKeyGenerator || null,
       adminMiddleware: options.adminMiddleware || null,
     };
 
